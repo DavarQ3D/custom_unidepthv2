@@ -1,58 +1,122 @@
 import warnings
 warnings.filterwarnings("ignore")
 
-import numpy as np
-import torch
-from PIL import Image
-
+from custom_utils import *
 from unidepth.models import UniDepthV2
 from unidepth.utils import colorize, image_grid
 from unidepth.utils.camera import Pinhole
+from enum import Enum
+import os
 
+class Dataset(Enum):
+    IPHONE = 1
+    NYU2 = 2
+    KITTI = 3
 
-def demo(model):
-    rgb = np.array(Image.open("assets/demo/rgb.png"))
-    rgb_torch = torch.from_numpy(rgb).permute(2, 0, 1)
-    intrinsics_torch = torch.from_numpy(np.load("assets/demo/intrinsics.npy"))
-    camera = Pinhole(K=intrinsics_torch.unsqueeze(0))
-
-    # predict
-    predictions = model.infer(rgb_torch, camera)
-
-    # get GT and pred
-    depth_pred = predictions["depth"].squeeze().cpu().numpy()
-    depth_gt = np.array(Image.open("assets/demo/depth.png")).astype(float) / 1000.0
-
-    # compute error, you have zero divison where depth_gt == 0.0
-    depth_arel = np.abs(depth_gt - depth_pred) / (depth_gt + 1e-6)
-    depth_arel[depth_gt == 0.0] = 0.0
-
-    # colorize
-    depth_pred_col = colorize(depth_pred, vmin=0.01, vmax=10.0, cmap="magma_r")
-    depth_gt_col = colorize(depth_gt, vmin=0.01, vmax=10.0, cmap="magma_r")
-    depth_error_col = colorize(depth_arel, vmin=0.0, vmax=0.2, cmap="coolwarm")
-
-    # save image with pred and error
-    artifact = image_grid([rgb, depth_gt_col, depth_pred_col, depth_error_col], 2, 2)
-    Image.fromarray(artifact).save("assets/demo/output.png")
-
-    print("Available predictions:", list(predictions.keys()))
-    print(f"ARel: {depth_arel[depth_gt > 0].mean() * 100:.2f}%")
-
+#=============================================================================================================
 
 if __name__ == "__main__":
-    # print("Torch version:", torch.__version__)
-    type_ = "l"  # available types: s, b, l
-    name = f"unidepth-v2-vit{type_}14"
+    
+    dtSet = Dataset.IPHONE
+    prefixPath = "/Users/3dsensing/Desktop/projects/custom_depthAnythingV2"
+    outdir = "./assets/outputs"
+    os.makedirs(outdir, exist_ok=True)
+
+    #--------------------- settings
+    if dtSet == Dataset.IPHONE:
+        inputPath = prefixPath + "/data/iphone/"
+    elif dtSet == Dataset.NYU2:
+        inputPath = prefixPath + "/data/nyu2_test/"
+    elif dtSet == Dataset.KITTI:
+        inputPath = prefixPath + "/data/kitti_variety/"
+    else:
+        raise ValueError("Unsupported dataset")
+
+    #--------------------- load models
+
+    encoder = "vits"                           # vits, vitb, vitl
+    name = f"unidepth-v2-{encoder}14"
     model = UniDepthV2.from_pretrained(f"lpiccinelli/{name}")
 
-    # set resolution level (only V2)
-    # model.resolution_level = 9
+    # model.resolution_level = 9               # set resolution level (only V2)
+    model.interpolation_mode = "bilinear"      # set interpolation mode (only V2)
 
-    # set interpolation mode (only V2)
-    model.interpolation_mode = "bilinear"
+    DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+    model = model.to(DEVICE).eval()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = model.to(device).eval()
+    #------------------ inference loop
+    #------------------------------------------------------------------
+    numFiles = len(os.listdir(inputPath)) // 2
+    start = 0
 
-    demo(model)
+    for idx in range(start, numFiles):
+
+
+        print('\n'"========================================")
+        print(f'============= sample --> {idx} =============')
+        print("========================================", '\n')
+
+        if dtSet == Dataset.IPHONE:
+
+            rgbFileName = f"RGB_{idx:04d}.png"
+            rgbPath = inputPath + rgbFileName 
+            raw_image = cv2.imread(rgbPath)
+            raw_image = cv2.rotate(raw_image, cv2.ROTATE_90_CLOCKWISE)
+
+            gtPath = inputPath + f"ARKit_DepthValues_{idx:04d}.txt" 
+            gt = loadMatrixFromFile(gtPath)
+            gt = cv2.rotate(gt, cv2.ROTATE_90_CLOCKWISE)
+
+        elif dtSet == Dataset.NYU2:
+
+            rgbFileName = f"{idx:05d}_colors.png"
+            rgbPath = inputPath + rgbFileName 
+            raw_image = cv2.imread(rgbPath)
+
+            gtPath = inputPath + f"{idx:05d}_depth.png"
+            gt = cv2.imread(gtPath, cv2.IMREAD_UNCHANGED)
+            gt = gt.astype(np.float64) / 1000.0           # scale to meters
+
+            margin = 8   # remove white margin
+            raw_image = raw_image[margin:-margin, margin:-margin, :]
+            gt = gt[margin:-margin, margin:-margin]
+
+        elif dtSet == Dataset.KITTI:
+
+            rgbFileName = f"{idx:05d}_colors.png"
+            rgbPath = inputPath + rgbFileName 
+            raw_image = cv2.imread(rgbPath)
+
+            gtPath = inputPath + f"{idx:05d}_depth.png"
+            gt = cv2.imread(gtPath, cv2.IMREAD_UNCHANGED)
+            gt = gt.astype(np.float64) / 256.0           # scale to meters
+
+        else:
+            raise ValueError("Unsupported dataset")
+
+
+        rgb = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)        # convert bgr to rgb
+        rgbTensor = torch.from_numpy(np.array(rgb))
+        rgbTensor = rgbTensor.permute(2, 0, 1)                  # c, h, w
+
+        # intrinsics_path = "assets/demo/intrinsics.npy"
+        # # Load the intrinsics if available
+        # intrinsics = torch.from_numpy(np.load(intrinsics_path)) # 3 x 3
+        # # For V2, we defined camera classes. If you pass a 3x3 tensor (as above)
+        # # it will convert to Pinhole, but you can pass classes from camera.py.
+        # # The `Camera` class is meant as an abstract, use only child classes as e.g.:
+        # from unidepth.utils.camera import Pinhole, Fisheye624
+        # camera = Pinhole(K=intrinsics) # pinhole 
+        # # fill in fisheye, params: fx,fy,cx,cy,d1,d2,d3,d4,d5,d6,t1,t2,s1,s2,s3,s4
+        # camera = Fisheye624(params=torch.tensor([...]))
+        # predictions = model.infer(rgb, camera)
+
+        predictions = model.infer(rgbTensor)
+        depth = predictions["depth"]                # Metric Depth Estimation
+        xyz = predictions["points"]                 # Point Cloud in Camera Coordinate
+        intrinsics = predictions["intrinsics"]      # Intrinsics Prediction
+
+
+
+
+

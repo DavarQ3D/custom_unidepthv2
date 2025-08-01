@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import numpy as np
 import torch
 from PIL import Image
@@ -38,7 +41,7 @@ def demo(model):
 
 
 if __name__ == "__main__":
-    print("Torch version:", torch.__version__)
+    # print("Torch version:", torch.__version__)
     type_ = "l"  # available types: s, b, l
     name = f"unidepth-v2-vit{type_}14"
     model = UniDepthV2.from_pretrained(f"lpiccinelli/{name}")

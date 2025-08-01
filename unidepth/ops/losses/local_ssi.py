@@ -244,12 +244,12 @@ class EdgeGuidedLocalSSI(nn.Module):
             self.random_patch_extractor = RandomPatchExtractor()
         except Exception as e:
             self.random_patch_extractor = extract_patches
-            print(
-                "EdgeGuidedLocalSSI reverts to a non cuda-optimized operation, "
-                "you will experince large slowdown, "
-                "please install it: ",
-                "`cd ./unidepth/ops/extract_patches && bash compile.sh`",
-            )
+            # print(
+            #     "EdgeGuidedLocalSSI reverts to a non cuda-optimized operation, "
+            #     "you will experince large slowdown, "
+            #     "please install it: ",
+            #     "`cd ./unidepth/ops/extract_patches && bash compile.sh`",
+            # )
 
     def get_edge(self, image, mask):
         channels = image.shape[1]

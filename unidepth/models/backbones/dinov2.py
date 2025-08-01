@@ -482,5 +482,6 @@ def _make_dinov2_model(
         info = model.load_state_dict(state_dict, strict=False)
         print(f"loading from {pretrained} with:", info)
     else:
-        print("Not loading pretrained weights for backbone")
+        # print("Not loading pretrained weights for backbone")
+        pass
     return model

@@ -23,7 +23,7 @@ if __name__ == "__main__":
     outdir = "./assets/outputs"
     os.makedirs(outdir, exist_ok=True)
 
-    #--------------------- settings
+    #--------------------- data
     if dtSet == Dataset.IPHONE:
         inputPath = prefixPath + "/data/iphone/"
     elif dtSet == Dataset.NYU2:
@@ -32,6 +32,10 @@ if __name__ == "__main__":
         inputPath = prefixPath + "/data/kitti_variety/"
     else:
         raise ValueError("Unsupported dataset")
+    
+    #--------------------- settings
+
+    feedIntrinsics = False          
 
     #--------------------- load models
 
@@ -90,33 +94,42 @@ if __name__ == "__main__":
 
             gtPath = inputPath + f"{idx:05d}_depth.png"
             gt = cv2.imread(gtPath, cv2.IMREAD_UNCHANGED)
-            gt = gt.astype(np.float64) / 256.0           # scale to meters
+            gt = gt.astype(np.float64) / 256.0                         # scale to meters
 
         else:
             raise ValueError("Unsupported dataset")
 
-
-        rgb = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)        # convert bgr to rgb
+        rgb = cv2.cvtColor(raw_image, cv2.COLOR_BGR2RGB)               # convert bgr to rgb
         rgbTensor = torch.from_numpy(np.array(rgb))
-        rgbTensor = rgbTensor.permute(2, 0, 1)                  # c, h, w
+        rgbTensor = rgbTensor.permute(2, 0, 1)                         # c, h, w
 
-        # intrinsics_path = "assets/demo/intrinsics.npy"
-        # # Load the intrinsics if available
-        # intrinsics = torch.from_numpy(np.load(intrinsics_path)) # 3 x 3
-        # # For V2, we defined camera classes. If you pass a 3x3 tensor (as above)
-        # # it will convert to Pinhole, but you can pass classes from camera.py.
-        # # The `Camera` class is meant as an abstract, use only child classes as e.g.:
-        # from unidepth.utils.camera import Pinhole, Fisheye624
-        # camera = Pinhole(K=intrinsics) # pinhole 
-        # # fill in fisheye, params: fx,fy,cx,cy,d1,d2,d3,d4,d5,d6,t1,t2,s1,s2,s3,s4
-        # camera = Fisheye624(params=torch.tensor([...]))
-        # predictions = model.infer(rgb, camera)
+        camera = None
+        if feedIntrinsics:
+            intrinsics_path = "assets/demo/intrinsics.npy"
+            intrinsics = torch.from_numpy(np.load(intrinsics_path))    # 3 x 3
+            from unidepth.utils.camera import Pinhole
+            camera = Pinhole(K=intrinsics) 
+            print("intrinsics shape:", intrinsics.shape)
+            print("intrinsics:", intrinsics)
+            exit()
 
-        predictions = model.infer(rgbTensor)
-        depth = predictions["depth"]                # Metric Depth Estimation
-        xyz = predictions["points"]                 # Point Cloud in Camera Coordinate
-        intrinsics = predictions["intrinsics"]      # Intrinsics Prediction
+        predictions = model.infer(rgbTensor, camera=camera)
+        
+        depth = predictions["depth"]                                 # metric depth
+        depth = depth[0,0].cpu().numpy()
+        
+        xyz = predictions["points"]                                  # point cloud in camera coordinates
+        xyz = xyz[0].cpu().permute(1, 2, 0).numpy()
 
+        intrinsics = predictions["intrinsics"]                       # intrinsics prediction
+        intrinsics = intrinsics[0].cpu().numpy()
+
+        visualRes = np.hstack([raw_image, colorize(depth)])  
+        ssc = 0.4
+        visualRes = cv2.resize(visualRes, None, fx=ssc, fy=ssc, interpolation=cv2.INTER_CUBIC)
+        displayImage("visual", visualRes)
+        
+        
 
 
 

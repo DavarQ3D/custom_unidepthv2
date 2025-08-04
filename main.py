@@ -6,7 +6,7 @@ from unidepth.models import UniDepthV2
 from unidepth.utils import colorize, image_grid
 from unidepth.utils.camera import Pinhole
 from enum import Enum
-import os
+import os, sys
 
 class Dataset(Enum):
     IPHONE = 1
@@ -18,7 +18,8 @@ class Dataset(Enum):
 if __name__ == "__main__":
     
     dtSet = Dataset.IPHONE
-    prefixPath = "/Users/3dsensing/Desktop/projects/custom_depthAnythingV2"
+    temp = "/Users/3dsensing/Desktop/" if sys.platform == 'darwin' else "C:/Users/PC/Desktop/Temporary/"
+    prefixPath = temp + "projects/custom_depthAnythingV2" 
     outdir = "./assets/outputs"
     os.makedirs(outdir, exist_ok=True)
 
@@ -115,6 +116,8 @@ if __name__ == "__main__":
         depth = predictions["depth"]                # Metric Depth Estimation
         xyz = predictions["points"]                 # Point Cloud in Camera Coordinate
         intrinsics = predictions["intrinsics"]      # Intrinsics Prediction
+
+
 
 
 

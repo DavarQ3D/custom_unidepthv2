@@ -3,10 +3,11 @@ warnings.filterwarnings("ignore")
 
 from custom_utils import *
 from unidepth.models import UniDepthV2
-from unidepth.utils import colorize, image_grid
+from unidepth.utils import colorize
 from unidepth.utils.camera import Pinhole
 from enum import Enum
 import os, sys
+import torch
 
 class Dataset(Enum):
     IPHONE = 1

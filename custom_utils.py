@@ -1,22 +1,6 @@
 import cv2
 import numpy as np
-from PIL import Image
 from pathlib import Path
-import torch
-
-#=============================================================================================================
-
-def inferFromTorch(model, image, input_size):
-    return model.infer_image(image, input_size, doResize=False)
-
-#=============================================================================================================
-
-def inferFromCoreml(mlProg, bgr):
-    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-    pil_input = Image.fromarray(rgb)
-    pred = mlProg.predict({"image": pil_input})
-    depth = np.array(pred["depth"], dtype=np.float32)
-    return depth
 
 #=============================================================================================================
 
@@ -29,9 +13,7 @@ def normalize(image):
 def denormalize(image):
     return (image * 255).astype(np.uint8)
 
-def analyzeAndPrepVis(rgb, mask, ref, pred, mode = "color", normalizeError=True, vertConcat=False):
-
-    assert mode in ("color", "grayscale")
+def analyzeAndPrepVis(rgb, mask, ref, pred, vertConcat=False):
     
     err = np.abs(ref - pred)
     valid = err[mask]
@@ -40,15 +22,13 @@ def analyzeAndPrepVis(rgb, mask, ref, pred, mode = "color", normalizeError=True,
 
     ref = normalize(ref)
     pred = normalize(pred)
-    err = normalize(err) if normalizeError else np.clip(err, 0, 1)
+
+    err = np.clip(err, 0, valid.max())
+    err = normalize(err) 
 
     ref = denormalize(ref)
     pred = denormalize(pred)    
     err = denormalize(err)
-
-    if mode == "grayscale":
-        gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
-        return cv2.hconcat([gray, ref, pred, err])
 
     mask = mask.astype(np.uint8) * 255
     mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
@@ -56,6 +36,7 @@ def analyzeAndPrepVis(rgb, mask, ref, pred, mode = "color", normalizeError=True,
     pred = cv2.cvtColor(pred, cv2.COLOR_GRAY2BGR)
     err = cv2.cvtColor(err, cv2.COLOR_GRAY2BGR)
     err = cv2.applyColorMap(err, cv2.COLORMAP_JET)
+    err[mask == 0] = 0                 
 
     visualRes = cv2.vconcat([rgb, mask, ref, pred, err]) if vertConcat else cv2.hconcat([rgb, mask, ref, pred, err])
 
@@ -76,65 +57,6 @@ def loadMatrixFromFile(path):
     path = Path(path)
     matrix = np.loadtxt(path, delimiter=',', dtype=np.float64)
     return matrix
-
-#=============================================================================================================
-
-def ensure_multiple_of(x, multiple_of=14):
-    return (np.floor(x / multiple_of) * multiple_of).astype(int)
-
-#=============================================================================================================
-
-def overlayInputs(rgb, depth):
-    rgb = cv2.resize(rgb, (depth.shape[1], depth.shape[0]), interpolation=cv2.INTER_CUBIC)
-    gray = cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
-    gray = normalize(gray)
-    depth = normalize(depth)
-    diff = np.abs(gray - depth)
-    gray = cv2.resize(gray, (gray.shape[1] * 4, gray.shape[0] * 4), interpolation=cv2.INTER_CUBIC)
-    depth = cv2.resize(depth, (depth.shape[1] * 4, depth.shape[0] * 4), interpolation=cv2.INTER_CUBIC)
-    diff = cv2.resize(diff, (diff.shape[1] * 4, diff.shape[0] * 4), interpolation=cv2.INTER_CUBIC)
-    # cv2.imshow("gray", gray)
-    # cv2.imshow("depth", depth)
-    cv2.imshow("diff", diff)
-    key = cv2.waitKey(0)
-    if key == 27:
-        cv2.destroyAllWindows()
-        exit()
-
-#=============================================================================================================
-
-def center_crop_or_pad(img: np.ndarray, desiredRow: int, desiredCol: int, borderType = cv2.BORDER_CONSTANT) -> np.ndarray:
-
-    h, w = img.shape[:2]
-
-    # centre crop if the dimension is too large 
-    top = 0
-    left = 0
-    if h > desiredRow:
-        top = (h - desiredRow) // 2
-        img = img[top : top + desiredRow, :, :]
-        h = desiredRow
-    if w > desiredCol:
-        left = (w - desiredCol) // 2
-        img = img[:, left : left + desiredCol, :]
-        w = desiredCol
-
-    # symmetric padding if the dimension is too small 
-    pad_top    = (desiredRow - h) // 2
-    pad_bottom = desiredRow - h - pad_top
-    pad_left   = (desiredCol - w) // 2
-    pad_right  = desiredCol - w - pad_left
-
-    if any(p > 0 for p in (pad_top, pad_bottom, pad_left, pad_right)):
-
-        if borderType == cv2.BORDER_CONSTANT:
-            img = cv2.copyMakeBorder(img, pad_top, pad_bottom, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT)
-        elif borderType == cv2.BORDER_REFLECT_101:
-            img = cv2.copyMakeBorder(img, pad_top, pad_bottom, pad_left, pad_right, borderType=cv2.BORDER_REFLECT_101)
-        else:
-            raise ValueError(f"Unsupported border type: {borderType}")
-
-    return img, pad_top, pad_left, top, left # type: ignore
 
 #=============================================================================================================
 
@@ -238,45 +160,3 @@ def getValidMaskAndClipExtremes(image, minVal, maxVal):
     mask = np.isfinite(image) & (image > minVal) & (image < maxVal) 
     image = np.clip(image, minVal, maxVal)  
     return mask, image
-
-#=============================================================================================================
-
-def handlePredictionSteps(raw_image, gt, makeSquareInput, borderType, useCoreML, mlProgram, torch_model):
-
-    if makeSquareInput:
-        
-        sc = 518 / max(raw_image.shape[:2])
-        resized = cv2.resize(raw_image, (int(raw_image.shape[1] * sc), int(raw_image.shape[0] * sc)), interpolation=cv2.INTER_CUBIC)
-
-        r = 518
-        c = 518
-        cropped, pad_top, pad_left, _, _ = center_crop_or_pad(resized, r, c, borderType)
-
-        pred = inferFromCoreml(mlProgram, cropped) if useCoreML else inferFromTorch(torch_model, cropped, min(r, c))
-
-        pred    = pred   [pad_top : pad_top + resized.shape[0], pad_left: pad_left + resized.shape[1]]
-        cropped = cropped[pad_top : pad_top + resized.shape[0], pad_left: pad_left + resized.shape[1], :]
-        
-        pred    = cv2.resize(pred,    (gt.shape[1], gt.shape[0]), interpolation=cv2.INTER_CUBIC)
-        cropped = cv2.resize(cropped, (gt.shape[1], gt.shape[0]), interpolation=cv2.INTER_CUBIC)
-
-    else:    
-        sc = 518 / min(raw_image.shape[:2])
-        resized = cv2.resize(raw_image, (int(raw_image.shape[1] * sc), int(raw_image.shape[0] * sc)), interpolation=cv2.INTER_CUBIC)
-
-        r = ensure_multiple_of(resized.shape[0], multiple_of=14)
-        c = ensure_multiple_of(resized.shape[1], multiple_of=14)
-        cropped, _, _, top, left = center_crop_or_pad(resized, r, c)
-        
-        pred = inferFromCoreml(mlProgram, cropped) if useCoreML else inferFromTorch(torch_model, cropped, min(r, c))
-        
-        vertMarg  = (top * 2) / (resized.shape[0] / gt.shape[0])
-        horizMarg = (left * 2) / (resized.shape[1] / gt.shape[1])
-        vertMarg = round(vertMarg / 2)                                # round to the nearest even number
-        horizMarg = round(horizMarg / 2)
-        gt = gt[vertMarg or None : (-vertMarg) or None, horizMarg or None : (-horizMarg) or None]
-        
-        pred    = cv2.resize(pred,    (gt.shape[1], gt.shape[0]), interpolation=cv2.INTER_CUBIC)
-        cropped = cv2.resize(cropped, (gt.shape[1], gt.shape[0]), interpolation=cv2.INTER_CUBIC)
-
-    return pred, gt, cropped

@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from pathlib import Path
+import torch
 
 #=============================================================================================================
 
@@ -85,7 +86,7 @@ def estimateInitialParams(x, y, fitShift):
 
 #=============================================================================================================
 
-def weightedLeastSquared(pred, gt, guessInitPrms, k_lo=0.5, k_hi=3, num_iters=5, fit_shift=True, verbose=True, mask=None):
+def weightedLeastSquared(pred, gt, guessInitPrms, k_lo=0.5, k_hi=3.0, num_iters=5, fit_shift=True, verbose=True, mask=None):
 
     if mask is None:
         mask = (gt > 0) & (pred > 0) & np.isfinite(gt) & np.isfinite(pred)
@@ -160,3 +161,44 @@ def getValidMaskAndClipExtremes(image, minVal, maxVal):
     mask = np.isfinite(image) & (image > minVal) & (image < maxVal) 
     image = np.clip(image, minVal, maxVal)  
     return mask, image
+
+#=============================================================================================================
+
+def getIntrinsics():
+    # intrinsics_path = "assets/demo/intrinsics.npy"
+    # intrinsics = torch.from_numpy(np.load(intrinsics_path))    # 3 x 3
+    # from unidepth.utils.camera import Pinhole
+    # camera = Pinhole(K=intrinsics) 
+    # print("intrinsics shape:", intrinsics.shape)
+    # print("intrinsics:", intrinsics)
+    # exit()
+    return None
+
+#=============================================================================================================
+
+def handlePredictionSteps(bgr, gt, torch_model, camera=None):
+
+    #------------------------- preprocessing
+
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)                      # convert bgr to rgb
+    rgbTensor = torch.from_numpy(np.array(rgb))
+    rgbTensor = rgbTensor.permute(2, 0, 1)                         # c, h, w
+
+    #------------------------- inference
+
+    with torch.no_grad():
+        predictions = torch_model.infer(rgbTensor, camera=camera)
+    
+    depth = predictions["depth"]                                 # metric depth
+    depth = depth[0,0].cpu().numpy()
+    
+    xyz = predictions["points"]                                  # point cloud in camera coordinates
+    xyz = xyz[0].cpu().permute(1, 2, 0).numpy()
+
+    intrinsics = predictions["intrinsics"]                       # intrinsics prediction
+    intrinsics = intrinsics[0].cpu().numpy()
+
+    depth   = cv2.resize(depth, (gt.shape[1], gt.shape[0]), interpolation=cv2.INTER_CUBIC)
+    cropped = cv2.resize(bgr,   (gt.shape[1], gt.shape[0]), interpolation=cv2.INTER_CUBIC)
+
+    return depth, cropped, xyz, intrinsics

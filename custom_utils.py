@@ -226,3 +226,14 @@ def handlePredictionSteps(bgr, gt, torch_model, camera=None):
     cropped = cv2.resize(bgr,   (gt.shape[1], gt.shape[0]), interpolation=cv2.INTER_CUBIC)
 
     return depth, cropped, xyz, intrinsics
+
+#=============================================================================================================
+
+def compareIntrinsics(dtset, pred):
+
+    gt = getIntrinsics(dtset)
+    gt = gt.K.cpu().numpy() 
+    
+    print(f"\nPred --> fx: {fp(pred[0, 0], 3)}, fy: {fp(pred[1, 1], 3)}, cx: {fp(pred[0, 2], 3)}, cy: {fp(pred[1, 2], 3)}")
+    print(f"GT   --> fx: {fp(gt[0, 0], 3)}, fy: {fp(gt[1, 1], 3)}, cx: {fp(gt[0, 2], 3)}, cy: {fp(gt[1, 2], 3)}\n")
+

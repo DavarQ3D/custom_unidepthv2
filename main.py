@@ -27,7 +27,7 @@ if __name__ == "__main__":
     
     #--------------------- settings
 
-    feedIntrinsics = False          
+    feedIntrinsics = True and dtSet != Dataset.KITTI  # only have this option for datasets other than KITTI       
 
     weightedLsq = True
     fitOnDepth = False
@@ -110,6 +110,7 @@ if __name__ == "__main__":
 
         camera = getIntrinsics(dtSet) if feedIntrinsics else None
         depth, cropped, xyz, intrinsics = handlePredictionSteps(bgr, gt, model, camera)
+        compareIntrinsics(dtSet, intrinsics)
 
         #------------------------- alignment
 

@@ -2,6 +2,13 @@ import cv2
 import numpy as np
 from pathlib import Path
 import torch
+from enum import Enum    
+from unidepth.utils.camera import Pinhole
+
+class Dataset(Enum):
+    IPHONE = 1
+    NYU2 = 2
+    KITTI = 3
 
 #=============================================================================================================
 
@@ -164,15 +171,32 @@ def getValidMaskAndClipExtremes(image, minVal, maxVal):
 
 #=============================================================================================================
 
-def getIntrinsics():
-    # intrinsics_path = "assets/demo/intrinsics.npy"
-    # intrinsics = torch.from_numpy(np.load(intrinsics_path))    # 3 x 3
-    # from unidepth.utils.camera import Pinhole
-    # camera = Pinhole(K=intrinsics) 
-    # print("intrinsics shape:", intrinsics.shape)
-    # print("intrinsics:", intrinsics)
-    # exit()
-    return None
+def getIntrinsics(dtset):
+
+    if dtset == Dataset.IPHONE:
+        fx = fy = 1521
+        cx = 718
+        cy = 965
+    elif dtset == Dataset.NYU2:
+        fx = 518.858
+        fy = 519.470
+        cx = 325.582
+        cy = 253.736
+    elif dtset == Dataset.KITTI:
+        fx = fy = 721.537
+        cx = (609.559 + 596.559) / 2.0
+        cy = 149.854
+    else:
+        raise ValueError("Unsupported dataset")
+
+    intrinsics = np.array([[fx, 0, cx],
+                            [0, fy, cy],
+                            [0, 0, 1]], dtype=np.float32)
+    
+    intrinsics = torch.from_numpy(intrinsics)    # 3 x 3
+    camera = Pinhole(K=intrinsics) 
+
+    return camera
 
 #=============================================================================================================
 

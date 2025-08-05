@@ -3,15 +3,7 @@ warnings.filterwarnings("ignore")
 
 from custom_utils import *
 from unidepth.models import UniDepthV2
-from unidepth.utils import colorize
-from unidepth.utils.camera import Pinhole
-from enum import Enum
 import os, sys
-
-class Dataset(Enum):
-    IPHONE = 1
-    NYU2 = 2
-    KITTI = 3
 
 #=============================================================================================================
 
@@ -116,7 +108,7 @@ if __name__ == "__main__":
 
         #------------------------- model prediction
 
-        camera = getIntrinsics() if feedIntrinsics else None
+        camera = getIntrinsics(dtSet) if feedIntrinsics else None
         depth, cropped, xyz, intrinsics = handlePredictionSteps(bgr, gt, model, camera)
 
         #------------------------- alignment
